@@ -520,7 +520,7 @@ int main(int argc, char* argv[]) {
         }
         
         // Process with ViLib tracker
-        vilib_tracker.processImage(image);
+        vilib_tracker.processImage(image, i == 0);
         
         // Process with OpenCV tracker
         opencv_tracker.processImage(image);
