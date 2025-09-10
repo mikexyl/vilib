@@ -42,8 +42,8 @@ log_stats: -1
 
 feature_tracker:
   reset_before_detection:                 false
-  use_best_n_features:                    64
-  min_tracks_to_detect_new_features:      60
+  use_best_n_features:                    500
+  min_tracks_to_detect_new_features:      200
   affine_est_gain:                        false
   affine_est_offset:                      false
 

@@ -10,15 +10,15 @@
 # modification, are permitted provided that the following conditions are met:
 #
 # 1. Redistributions of source code must retain the above copyright notice, this
-#    list of conditions and the following disclaimer.
+# list of conditions and the following disclaimer.
 #
 # 2. Redistributions in binary form must reproduce the above copyright notice,
-#    this list of conditions and the following disclaimer in the documentation
-#    and/or other materials provided with the distribution.
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
 #
 # 3. Neither the name of the copyright holder nor the names of its
-#    contributors may be used to endorse or promote products derived from
-#    this software without specific prior written permission.
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -35,33 +35,32 @@ cmake_minimum_required(VERSION 3.10)
 
 include(CheckLanguage)
 check_language(CUDA)
-if (CMAKE_CUDA_COMPILER)
+
+if(CMAKE_CUDA_COMPILER)
   project(vilib VERSION 1.0.0 DESCRIPTION "fast cuda fast feature tracking" LANGUAGES CXX CUDA)
 else()
   message(STATUS "CUDA not natively supported yet, will look for CUDA cmake package")
   project(vilib VERSION 1.0.0 DESCRIPTION "fast cuda fast feature tracking" LANGUAGES CXX)
 endif()
 
-include (CMakePrintHelpers)
-include (CMakePackageConfigHelpers)
-include (CPack)
-include (GNUInstallDirs)
+include(CMakePrintHelpers)
+include(CMakePackageConfigHelpers)
+include(CPack)
+include(GNUInstallDirs)
 
-if (CMAKE_CUDA_COMPILER)
+if(CMAKE_CUDA_COMPILER)
 else()
-   find_package(CUDA REQUIRED)
-   set(CUDA_LINK_LIBRARIES_KEYWORD PUBLIC)
-   cuda_select_nvcc_arch_flags(ARCH_FLAGS)
-   message(STATUS "Found CUDA ${CUDA_VERSION_STRING} at ${CUDA_TOOLKIT_ROOT_DIR}")
+  find_package(CUDA REQUIRED)
+  set(CUDA_LINK_LIBRARIES_KEYWORD PUBLIC)
+  cuda_select_nvcc_arch_flags(ARCH_FLAGS)
+  message(STATUS "Found CUDA ${CUDA_VERSION_STRING} at ${CUDA_TOOLKIT_ROOT_DIR}")
 endif()
 
-
-find_package(OpenCV REQUIRED COMPONENTS core)
+find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
 
 option(BUILD_SHARED_LIBS "build shared libraries" ON)
 cmake_print_variables(BUILD_SHARED_LIBS)
-
 
 set(CUSTOM_OPENCV_PATH "" CACHE PATH "path to custom opencv version")
 
@@ -70,20 +69,20 @@ file(GLOB_RECURSE VILIB_SOURCES
   visual_lib/src/*.cu
 )
 
-if (CMAKE_CUDA_COMPILER)
-   add_library(vilib SHARED ${VILIB_SOURCES})
+if(CMAKE_CUDA_COMPILER)
+  add_library(vilib SHARED ${VILIB_SOURCES})
 else()
-   cuda_add_library(vilib SHARED ${VILIB_SOURCES})
+  cuda_add_library(vilib SHARED ${VILIB_SOURCES})
 endif()
 
 # the PUBLIC keyword means that any targets linking to this
-# target also need that include directory. 
+# target also need that include directory.
 target_include_directories(vilib PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/visual_lib/include>  
-    $<INSTALL_INTERFACE:include>
-    ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
-    ${CUDA_INCLUDE_DIRS}
-    )
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/visual_lib/include>
+  $<INSTALL_INTERFACE:include>
+  ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+  ${CUDA_INCLUDE_DIRS}
+)
 
 # will require that the compiler support compiler standard, and
 # add the flag if necessary. The PUBLIC keyword means any targets depending
@@ -97,25 +96,26 @@ set_target_properties(vilib
   CXX_STANDARD 11
   CXX_STANDARD_REQUIRED YES
   CXX_EXTENSIONS OFF
-  LINK_WHAT_YOU_USE OFF         # switch to on to check for unnecessary links
+  LINK_WHAT_YOU_USE OFF # switch to on to check for unnecessary links
   POSITION_INDEPENDENT_CODE ON
-  )
+)
 
 target_link_libraries(vilib PUBLIC
   opencv_core Eigen3::Eigen ${CUDA_LIBRARIES})
 
 # Set different compiler options for cxx and nvcc
-
 set(cxx_options -Wall -Wextra -Werror -Wfatal-errors -ffast-math -fsee -fno-signed-zeros -fno-math-errno -funroll-loops -fno-finite-math-only -march=native -O3 -DNDEBUG)
 set(nvcc_options --device-w --ftz=true --prec-div=false --prec-sqrt=false --fmad=true --default-stream per-thread -O3 -DNDEBUG)
 
 # the generator is only expanded if <COMPILE_LANGUAGE:FOO> evaluates to true
-
-if (CMAKE_CUDA_COMPILER)
-   target_compile_options(vilib PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${cxx_options}> $<$<COMPILE_LANGUAGE:CUDA>:${nvcc_options}>)
+if(CMAKE_CUDA_COMPILER)
+  target_compile_options(vilib PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${cxx_options}> $<$<COMPILE_LANGUAGE:CUDA>:${nvcc_options}>)
 else()
-   target_compile_options(vilib PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${cxx_options}> $<$<NOT:$<COMPILE_LANGUAGE:CXX>>:${nvcc_options}>)
+  target_compile_options(vilib PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${cxx_options}> $<$<NOT:$<COMPILE_LANGUAGE:CXX>>:${nvcc_options}>)
 endif()
+
+add_executable(vilib_tracking_example visual_lib/examples/vilib_tracking_example.cpp)
+target_link_libraries(vilib_tracking_example vilib ${OpenCV_LIBS})
 
 # Specify how to install the target.
 # The EXPORT keyword associates the installed target files with an "export" called
@@ -126,18 +126,17 @@ install(TARGETS vilib
   EXPORT ${PROJECT_NAME}Targets
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES DESTINATION include
-  )
+)
 
 install(DIRECTORY visual_lib/include/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-
 
 # generate the ConfigVersion.cmake file that will be included by Config.cmake
 write_basic_package_version_file(
   ${PROJECT_NAME}ConfigVersion.cmake
   VERSION ${PACKAGE_VERSION}
   COMPATIBILITY AnyNewerVersion
-  )
+)
 
 # generate the Config.cmake file
 configure_file(cmake/${PROJECT_NAME}Config.cmake.in ${PROJECT_NAME}Config.cmake @ONLY)
@@ -148,14 +147,13 @@ install(EXPORT ${PROJECT_NAME}Targets
   FILE ${PROJECT_NAME}Targets.cmake
   NAMESPACE ${PROJECT_NAME}::
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
-  )
+)
 
 # install the generated version and config files
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-              "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
-        )
-
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+)
 
 # Packaging support
 set(CPACK_PACKAGE_VENDOR "vilib")
