@@ -200,12 +200,23 @@ __global__ void track_features_kernel(const int candidate_num,
                                       float2 * __restrict__ d_cur_px,
                                       float2 * __restrict__ d_cur_alpha_beta,
                                       float4 * __restrict__ d_cur_f,
-                                      float  * __restrict__ d_cur_disparity) {
+                                      float  * __restrict__ d_cur_disparity,
+                                      const int max_buffer_count) {
   const int cx = blockIdx.x * CANDIDATES_PER_BLOCK_TRACK + threadIdx.y; // candidate id
   const int pyramid_levels = max_level - min_level + 1; // number of pyramid levels computed
   if(cx < candidate_num) {
     // Acquire buffer id for the candidate
     const int bx = d_indir_data[cx];
+    
+    // Bounds check to prevent illegal memory access
+    if(bx < 0 || bx >= max_buffer_count) {
+      // Invalid buffer id - mark feature as failed (NaN) and return
+      if(threadIdx.x == 0) {
+        d_cur_px[bx<<3].x = __int_as_float(0x7fffffff);
+        d_cur_px[bx<<3].y = __int_as_float(0x7fffffff);
+      }
+      return;
+    }
 
     // Initialize input and output references
     // Remark: struct size: 64 bytes
@@ -319,6 +330,7 @@ __host__ void track_features(const bool affine_est_offset,
                              float2 * d_in_cur_alpha_beta,
                              float4 * d_in_cur_f,
                              float  * d_in_cur_disparity,
+                             const int max_buffer_count,
                              cudaStream_t stream) {
   // Kernel parameters
   dim3 threads_per_block;
@@ -343,7 +355,8 @@ __host__ void track_features(const bool affine_est_offset,
       d_in_cur_px,
       d_in_cur_alpha_beta,
       d_in_cur_f,
-      d_in_cur_disparity
+      d_in_cur_disparity,
+      max_buffer_count
     );
   } else if(affine_est_offset) {
     track_features_kernel<FEATURE_TRACKER_REFERENCE_PATCH_TYPE,true,false><<<blocks_per_grid,threads_per_block,shm_per_block,stream>>>(
@@ -360,7 +373,8 @@ __host__ void track_features(const bool affine_est_offset,
       d_in_cur_px,
       d_in_cur_alpha_beta,
       d_in_cur_f,
-      d_in_cur_disparity
+      d_in_cur_disparity,
+      max_buffer_count
     );
   } else if(affine_est_gain) {
     track_features_kernel<FEATURE_TRACKER_REFERENCE_PATCH_TYPE,false,true><<<blocks_per_grid,threads_per_block,shm_per_block,stream>>>(
@@ -377,7 +391,8 @@ __host__ void track_features(const bool affine_est_offset,
       d_in_cur_px,
       d_in_cur_alpha_beta,
       d_in_cur_f,
-      d_in_cur_disparity
+      d_in_cur_disparity,
+      max_buffer_count
     );
   } else {
     track_features_kernel<FEATURE_TRACKER_REFERENCE_PATCH_TYPE,false,false><<<blocks_per_grid,threads_per_block,shm_per_block,stream>>>(
@@ -394,7 +409,8 @@ __host__ void track_features(const bool affine_est_offset,
       d_in_cur_px,
       d_in_cur_alpha_beta,
       d_in_cur_f,
-      d_in_cur_disparity
+      d_in_cur_disparity,
+      max_buffer_count
     );
   }
   CUDA_KERNEL_CHECK();
@@ -630,12 +646,18 @@ __global__ void update_tracks_kernel(const int candidate_num,
                                      const int * __restrict__ d_indir_data,
                                      const float2 * __restrict__ d_in_ref_px,
                                      T * __restrict__ d_patch_data,
-                                     float * __restrict__ d_hessian_data) {
+                                     float * __restrict__ d_hessian_data,
+                                     const int max_buffer_count) {
   const int cx = blockIdx.x * CANDIDATES_PER_BLOCK_UPDATE + threadIdx.y; // candidate id
   const int pyramid_levels = max_level - min_level + 1; // number of pyramid levels computed
   if(cx < candidate_num) {
     // Get the buffer id
     const int bx = d_indir_data[cx];
+    
+    // Bounds check to prevent illegal memory access
+    if(bx < 0 || bx >= max_buffer_count) {
+      return;
+    }
     // Metadata array size: 64 bytes
     const float2 & ref_px_bx = d_in_ref_px[bx<<3];
     // Patch data
@@ -700,6 +722,7 @@ __host__ void update_tracks(const int candidate_num,
                             const float2 * d_in_ref_px,
                             unsigned char * d_patch_data,
                             float * d_hessian_data,
+                            const int max_buffer_count,
                             cudaStream_t stream) {
   dim3 threads_per_block;
   threads_per_block.x = WARP_SIZE;
@@ -717,7 +740,8 @@ __host__ void update_tracks(const int candidate_num,
                                                           d_indir_data,
                                                           d_in_ref_px,
                                                           (FEATURE_TRACKER_REFERENCE_PATCH_TYPE*)d_patch_data,
-                                                          d_hessian_data);
+                                                          d_hessian_data,
+                                                          max_buffer_count);
   } else if(affine_est_offset) {
     update_tracks_kernel<FEATURE_TRACKER_REFERENCE_PATCH_TYPE,true,false><<<blocks_per_grid,threads_per_block,0,stream>>>(
                                                           candidate_num,
@@ -728,7 +752,8 @@ __host__ void update_tracks(const int candidate_num,
                                                           d_indir_data,
                                                           d_in_ref_px,
                                                           (FEATURE_TRACKER_REFERENCE_PATCH_TYPE*)d_patch_data,
-                                                          d_hessian_data);
+                                                          d_hessian_data,
+                                                          max_buffer_count);
   } else if(affine_est_gain) {
     update_tracks_kernel<FEATURE_TRACKER_REFERENCE_PATCH_TYPE,false,true><<<blocks_per_grid,threads_per_block,0,stream>>>(
                                                           candidate_num,
@@ -739,7 +764,8 @@ __host__ void update_tracks(const int candidate_num,
                                                           d_indir_data,
                                                           d_in_ref_px,
                                                           (FEATURE_TRACKER_REFERENCE_PATCH_TYPE*)d_patch_data,
-                                                          d_hessian_data);
+                                                          d_hessian_data,
+                                                          max_buffer_count);
   } else {
     update_tracks_kernel<FEATURE_TRACKER_REFERENCE_PATCH_TYPE,false,false><<<blocks_per_grid,threads_per_block,0,stream>>>(
                                                           candidate_num,
@@ -750,7 +776,8 @@ __host__ void update_tracks(const int candidate_num,
                                                           d_indir_data,
                                                           d_in_ref_px,
                                                           (FEATURE_TRACKER_REFERENCE_PATCH_TYPE*)d_patch_data,
-                                                          d_hessian_data);
+                                                          d_hessian_data,
+                                                          max_buffer_count);
   }
   CUDA_KERNEL_CHECK();
 }

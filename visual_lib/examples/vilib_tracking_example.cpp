@@ -133,6 +133,7 @@ public:
         
         auto track_start = std::chrono::high_resolution_clock::now();
         tracker_->track(frame_bundle, total_tracked_features, total_detected_features);
+        tracker_->showAdditionalStat(true);
         auto track_end = std::chrono::high_resolution_clock::now();
         
         auto end_time = std::chrono::high_resolution_clock::now();

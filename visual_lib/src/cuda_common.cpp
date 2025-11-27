@@ -43,11 +43,36 @@ bool cuda_initialize(void) {
    * there's no explicit initialization of the CUDA runtime, hence when
    * the first cudaX...() call is made, the CUDA runtime gets initialized.
    * This behaviour can skew benchmark measurements.
+   * 
+   * For multi-process scenarios: Each process gets its own CUDA context.
+   * If CUDA_VISIBLE_DEVICES is set, honor it; otherwise use device 0.
    */
   int device_count;
   if(cudaGetDeviceCount(&device_count) != cudaSuccess) {
     std::cout << "Error: no CUDA-capable device detected" << std::endl;
     return false;
+  }
+
+  // Explicitly select device (respects CUDA_VISIBLE_DEVICES if set)
+  // This ensures each process has a clean, isolated CUDA context
+  int device_id = 0;
+  const char* visible_devices = std::getenv("CUDA_VISIBLE_DEVICES");
+  if(visible_devices != nullptr) {
+    std::cout << "CUDA_VISIBLE_DEVICES=" << visible_devices << std::endl;
+  }
+  
+  cudaError_t err = cudaSetDevice(device_id);
+  if(err != cudaSuccess) {
+    std::cout << "Error: cudaSetDevice(" << device_id << ") failed: " 
+              << cudaGetErrorString(err) << std::endl;
+    return false;
+  }
+  
+  // Print device info for debugging multi-process issues
+  cudaDeviceProp prop;
+  if(cudaGetDeviceProperties(&prop, device_id) == cudaSuccess) {
+    std::cout << "Using CUDA device " << device_id << ": " << prop.name 
+              << " (compute capability " << prop.major << "." << prop.minor << ")" << std::endl;
   }
 
   CUDA_API_CALL(cudaSetDeviceFlags(cudaDeviceScheduleSpin));

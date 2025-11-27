@@ -110,7 +110,17 @@ void FeatureTrackerGPU::track(const std::shared_ptr<FrameBundle> & cur_frames,
         struct FeatureTrack & track = tracks_[c][track_id];
         // opposed to the previous version, now we only need to update
         // the indirection layer that points to the already occupied buffer cells
-        buffer_[c].h_indir_data_[track_id] = track.buffer_id_;
+        // Store as int into the mapped indirection buffer. If buffer_id_ is
+        // out of range, store -1 as a sentinel and log an error.
+        if(track.buffer_id_ >= max_ftr_count_) {
+          std::cerr << "ERROR: Invalid buffer_id_ " << track.buffer_id_
+                    << " for track " << track_id << " (camera " << c
+                    << "). Valid range: [0, " << max_ftr_count_ << ")" << std::endl;
+          buffer_[c].h_indir_data_[track_id] = -1;
+          continue;
+        } else {
+          buffer_[c].h_indir_data_[track_id] = static_cast<int>(track.buffer_id_);
+        }
       }
 
       // run the tracking on the GPU
@@ -130,6 +140,7 @@ void FeatureTrackerGPU::track(const std::shared_ptr<FrameBundle> & cur_frames,
                                                  buffer_[c].d_cur_alpha_beta_,
                                                  buffer_[c].d_cur_f_,
                                                  buffer_[c].d_cur_disparity_,
+                                                 max_ftr_count_,
                                                  stream_[c]);
     }
   }
@@ -298,7 +309,15 @@ void FeatureTrackerGPU::updateTracks(const std::size_t & last_n,
   // initialize the indirection layer with used buffer ids
   std::size_t indir_id = 0;
   for(auto it=tracks_[camera_id].begin() + offset; it < tracks_[camera_id].end(); ++it) {
-    buffer_[camera_id].h_indir_data_[indir_id++] = it->buffer_id_;
+    // Host-side validation: ensure buffer id fits into our allocated pool.
+    if(it->buffer_id_ >= max_ftr_count_) {
+      std::cerr << "ERROR: Invalid buffer_id_ " << it->buffer_id_
+                << " in updateTracks (camera " << camera_id
+                << "). Valid range: [0, " << max_ftr_count_ << ")" << std::endl;
+      buffer_[camera_id].h_indir_data_[indir_id++] = -1;
+      continue;
+    }
+    buffer_[camera_id].h_indir_data_[indir_id++] = static_cast<int>(it->buffer_id_);
   }
 
   // start a kernel for initializing the templates and the inverse hessians
@@ -313,6 +332,7 @@ void FeatureTrackerGPU::updateTracks(const std::size_t & last_n,
                                             buffer_[camera_id].d_template_px_,
                                             buffer_[camera_id].d_patch_data_,
                                             buffer_[camera_id].d_hessian_data_,
+                                            max_ftr_count_,
                                             stream_[camera_id]);
 }
 
