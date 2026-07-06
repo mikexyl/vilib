@@ -55,6 +55,60 @@ namespace vilib {
                                                    const float scale,                            \
                                                    cudaStream_t stream)
 
+template<conv_filter_border_type BORDER>
+__device__ __inline__ int resolve_border_y(const int y, const int height) {
+  if(y >= 0 && y < height) {
+    return y;
+  }
+
+  switch(BORDER) {
+    case conv_filter_border_type::BORDER_SKIP:
+    case conv_filter_border_type::BORDER_ZERO:
+      return -1;
+    case conv_filter_border_type::BORDER_REPLICATE:
+      return min(max(y, 0), height - 1);
+    case conv_filter_border_type::BORDER_REFLECT: {
+      if(height <= 1) {
+        return 0;
+      }
+      const int period = height << 1;
+      int wrapped = y % period;
+      if(wrapped < 0) {
+        wrapped += period;
+      }
+      return (wrapped < height) ? wrapped : (period - 1 - wrapped);
+    }
+    case conv_filter_border_type::BORDER_WRAP: {
+      int wrapped = y % height;
+      if(wrapped < 0) {
+        wrapped += height;
+      }
+      return wrapped;
+    }
+    case conv_filter_border_type::BORDER_REFLECT_101: {
+      if(height <= 1) {
+        return 0;
+      }
+      const int period = (height - 1) << 1;
+      int wrapped = y % period;
+      if(wrapped < 0) {
+        wrapped += period;
+      }
+      return (wrapped < height) ? wrapped : (period - wrapped);
+    }
+  }
+  return -1;
+}
+
+template<typename I, conv_filter_border_type BORDER>
+__device__ __inline__ float load_col_pixel(const I * __restrict__ input,
+                                           const int input_pitch,
+                                           const int input_height,
+                                           const int y) {
+  const int src_y = resolve_border_y<BORDER>(y, input_height);
+  return (src_y >= 0) ? input[src_y * input_pitch] : 0.0f;
+}
+
 template<typename I, typename O, int RADIUS, conv_filter_border_type BORDER>
 __global__ void conv_filter_col_gpu_shm_kernel(O * __restrict__ output,
                                                const int output_pitch,
@@ -73,62 +127,29 @@ __global__ void conv_filter_col_gpu_shm_kernel(O * __restrict__ output,
   if(baseX >= output_width) return;
 
   input += baseX;
-  output += baseY * output_pitch + baseX;
 
   // Main data
   #pragma unroll
-  for (int i = HALO_STEPS, i_y_offset = (i*BLOCKDIM_Y + baseY) * input_pitch; i < HALO_STEPS + RESULT_STEPS; i++, i_y_offset+= BLOCKDIM_Y * input_pitch) {
-    s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y] = input[i_y_offset];
+  for (int i = HALO_STEPS; i < HALO_STEPS + RESULT_STEPS; i++) {
+    const int i_y = baseY + i * BLOCKDIM_Y;
+    s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y] =
+        load_col_pixel<I, BORDER>(input, input_pitch, input_height, i_y);
   }
 
   // Upper halo
   #pragma unroll
-  for (int i = 0, i_y_offset = baseY * input_pitch; i < HALO_STEPS; i++, i_y_offset += BLOCKDIM_Y * input_pitch) {
+  for (int i = 0; i < HALO_STEPS; i++) {
     const int i_y = baseY + i * BLOCKDIM_Y;
-    switch(BORDER) {
-      case conv_filter_border_type::BORDER_SKIP:
-        // fall-through
-      case conv_filter_border_type::BORDER_ZERO:          // 000000|abcdefgh|0000000
-        s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y] = (i_y >= 0) ? input[i_y_offset] : 0;
-        break;
-      case conv_filter_border_type::BORDER_REPLICATE:     // aaaaaa|abcdefgh|hhhhhhh
-        s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y] = (i_y >= 0) ? input[i_y_offset] : input[0];
-        break;
-      case conv_filter_border_type::BORDER_REFLECT:       // fedcba|abcdefgh|hgfedcb
-        s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y] = (i_y >= 0) ? input[i_y_offset] : input[(-i_y-1) * input_pitch];
-        break;
-      case conv_filter_border_type::BORDER_WRAP:          // cdefgh|abcdefgh|abcdefg
-        s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y] = (i_y >= 0) ? input[i_y_offset] : input[(i_y + input_height) * input_pitch];
-        break;
-      case conv_filter_border_type::BORDER_REFLECT_101:   // gfedcb|abcdefgh|gfedcba
-        s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y] = (i_y >= 0) ? input[i_y_offset] : input[-i_y_offset];
-        break;
-    }
+    s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y] =
+        load_col_pixel<I, BORDER>(input, input_pitch, input_height, i_y);
   }
 
   // Lower halo
   #pragma unroll
-  for (int i = HALO_STEPS + RESULT_STEPS, i_y_offset = (i*BLOCKDIM_Y + baseY) * input_pitch; i < HALO_STEPS + RESULT_STEPS + HALO_STEPS; i++, i_y_offset += BLOCKDIM_Y * input_pitch) {
+  for (int i = HALO_STEPS + RESULT_STEPS; i < HALO_STEPS + RESULT_STEPS + HALO_STEPS; i++) {
     const int i_y = baseY + i * BLOCKDIM_Y;
-    switch(BORDER) {
-      case conv_filter_border_type::BORDER_SKIP:
-        // fall-through
-      case conv_filter_border_type::BORDER_ZERO:          // 000000|abcdefgh|0000000
-        s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y]= (input_height > i_y) ? input[i_y_offset] : 0;
-        break;
-      case conv_filter_border_type::BORDER_REPLICATE:     // aaaaaa|abcdefgh|hhhhhhh
-        s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y]= (input_height > i_y) ? input[i_y_offset] : input[(input_height-1) * input_pitch];
-        break;
-      case conv_filter_border_type::BORDER_REFLECT:       // fedcba|abcdefgh|hgfedcb
-        s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y]= (input_height > i_y) ? input[i_y_offset] : input[((input_height<<1) - 1 - i_y) * input_pitch];
-        break;
-      case conv_filter_border_type::BORDER_WRAP:          // cdefgh|abcdefgh|abcdefg
-        s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y]= (input_height > i_y) ? input[i_y_offset] : input[(i_y - input_height) * input_pitch];
-        break;
-      case conv_filter_border_type::BORDER_REFLECT_101:   // gfedcb|abcdefgh|gfedcba
-        s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y]= (input_height > i_y) ? input[i_y_offset] : input[((input_height<<1) - 2 - i_y) * input_pitch];
-        break;
-    }
+    s_Data[threadIdx.x][threadIdx.y + i * BLOCKDIM_Y] =
+        load_col_pixel<I, BORDER>(input, input_pitch, input_height, i_y);
   }
 
   // Compute and store results
@@ -145,7 +166,10 @@ __global__ void conv_filter_col_gpu_shm_kernel(O * __restrict__ output,
    if(sizeof(O) < sizeof(float)) {
      sum = max(min(sum,255.0f),0.f);
    }
-   output[i * BLOCKDIM_Y * output_pitch] = sum;
+   const int out_y = baseY + i * BLOCKDIM_Y;
+   if(out_y >= 0 && out_y < input_height) {
+     output[out_y * output_pitch + baseX] = sum;
+   }
   }
 }
 

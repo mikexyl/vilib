@@ -210,11 +210,6 @@ __global__ void track_features_kernel(const int candidate_num,
     
     // Bounds check to prevent illegal memory access
     if(bx < 0 || bx >= max_buffer_count) {
-      // Invalid buffer id - mark feature as failed (NaN) and return
-      if(threadIdx.x == 0) {
-        d_cur_px[bx<<3].x = __int_as_float(0x7fffffff);
-        d_cur_px[bx<<3].y = __int_as_float(0x7fffffff);
-      }
       return;
     }
 
