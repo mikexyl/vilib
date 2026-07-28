@@ -44,6 +44,8 @@ namespace vilib {
 
 class DetectorBaseGPU : public DetectorBase<true> {
 public:
+  using DetectorBase<true>::detect;
+
   DetectorBaseGPU(const std::size_t image_width,
                   const std::size_t image_height,
                   const std::size_t cell_size_width,
@@ -55,7 +57,7 @@ public:
                   // A response at (x,y) must be strictly greater than its neighborhood
                   // otherwise it is suppressed
                   const bool strictly_greater);
-  virtual ~DetectorBaseGPU(void);
+  ~DetectorBaseGPU(void) override;
 
   void setStream(cudaStream_t stream);
   cudaStream_t getStream(void);

@@ -43,6 +43,8 @@ namespace vilib {
 
 class HarrisGPU : public DetectorBaseGPU {
 public:
+  using DetectorBaseGPU::detect;
+
   HarrisGPU(const std::size_t image_width,
           const std::size_t image_height,
           const std::size_t cell_size_width,
@@ -59,13 +61,13 @@ public:
           // Features are dropped whose score is less than
           // (best feature score) * quality_level
           const float quality_level);
-  ~HarrisGPU(void);
-  void detect(const std::vector<std::shared_ptr<Subframe>> & pyramid);
+  ~HarrisGPU(void) override;
+  void detect(const std::vector<std::shared_ptr<Subframe>> & pyramid) override;
   void detect(const std::vector<std::shared_ptr<Subframe>> & pyramid,
               std::function<void(const std::size_t & /* cell count */,
                                  const float *       /* pos */,
                                  const float *       /* score */,
-                                 const int *         /* level */)> callback);
+                                 const int *         /* level */)> callback) override;
 private:
   void detectBase(const std::vector<std::shared_ptr<Subframe>> & pyramid);
 

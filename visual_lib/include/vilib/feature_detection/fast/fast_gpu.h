@@ -44,6 +44,8 @@ namespace vilib {
 
 class FASTGPU : public DetectorBaseGPU {
 public:
+  using DetectorBaseGPU::detect;
+
   FASTGPU(const std::size_t image_width,
           const std::size_t image_height,
           const std::size_t cell_size_width,
@@ -55,13 +57,13 @@ public:
           const float threshold,
           const int min_arc_length,
           fast_score score);
-  ~FASTGPU(void);
-  void detect(const std::vector<std::shared_ptr<Subframe>> & pyramid);
+  ~FASTGPU(void) override;
+  void detect(const std::vector<std::shared_ptr<Subframe>> & pyramid) override;
   void detect(const std::vector<std::shared_ptr<Subframe>> & pyramid,
               std::function<void(const std::size_t & /* cell count */,
                                  const float *       /* pos */,
                                  const float *       /* score */,
-                                 const int *         /* level */)> callback);
+                                 const int *         /* level */)> callback) override;
 private:
   void detectBase(const std::vector<std::shared_ptr<Subframe>> & pyramid);
 
